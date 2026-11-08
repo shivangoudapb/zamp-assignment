@@ -1,36 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Invoice Agent — PDF in, reasoned decision out
 
-## Getting Started
+An automated accounts-payable process: upload a vendor invoice (PDF or scan) and it is read by AI,
+checked against the vendor master and purchase orders, and given a decision —
+**Approve**, **Hold** (human review) or **Reject** — with every reason visible.
 
-First, run the development server:
+Built for the Zamp AI Solutions Associate case study (PS-1).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## How it works
+
+```
+Upload ─▶ 1 Ingest ─▶ 2 Extract (AI) ─▶ 3 Validate ─▶ 4 Vendor ─▶ 5 PO match ─▶ 6 Amount & duplicates ─▶ 7 Decide
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Stage | What it does |
+|---|---|
+| Ingest | Stores the original, fingerprints it (SHA-256), detects if it has a text layer or is an image-only scan |
+| Extract | Gemini reads the document into a strict JSON schema with a confidence score per key field. **The only AI step.** |
+| Validate | Required fields, line items → subtotal → total arithmetic, date sanity, low-confidence fields |
+| Vendor | Fuzzy-matches the printed name (or tax ID) to the vendor master; blocked vendors; bank account on invoice vs on file |
+| PO match | Uses the printed PO (tolerates `PO 1002` vs `PO-1002`); if none, scores the vendor's open POs by line-item overlap and remaining balance |
+| Amount & duplicates | Invoice vs **remaining** PO balance (after earlier approved invoices) with 2% tolerance; duplicate by file hash, normalised invoice number, and same amount within 7 days |
+| Decide | Any reject → **Reject**; any hold → **Hold**; else **Approve**. Plain-English summary + next action |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Design principle — AI reads, rules decide.** The model never makes the payment decision. All decision
+logic is deterministic code in [`lib/rules.ts`](lib/rules.ts), so every outcome is explainable and repeatable.
+If anything fails (AI outage, unreadable file), the invoice is routed to manual review — never silently approved.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Demo scenarios (`public/samples/`)
 
-## Learn More
+| Invoice | Scenario | Outcome |
+|---|---|---|
+| `happy-acme.pdf` | Clean invoice, explicit PO, 0.8% over PO for freight | ✅ Approve (within tolerance) |
+| `split-globex.pdf` | 2nd invoice on a PO already 60% billed — $4,800 vs $4,000 remaining | 🟡 Hold — PO overrun |
+| `duplicate-initech.pdf` | Approved invoice `INV-0457` re-sent by vendor's new system as `INV0457` | ❌ Reject — duplicate |
+| `scanned-northwind.pdf` | Image-only scan, trade name not legal name, no PO printed | 🟡 Hold — PO inferred, requester confirms |
+| `fraud-stark.pdf` | Known vendor + valid PO, but "our bank details have changed" | 🟡 Hold — possible payment fraud |
 
-To learn more about Next.js, take a look at the following resources:
+Held invoices can be approved or rejected by a reviewer in the UI; approvals then count against the PO balance.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Assumptions
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- PO amounts are total committed value incl. tax; tolerance is 2% of PO value.
+- PO balance consumption counts only approved invoices (system- or reviewer-approved).
+- No PO, no auto-pay: an inferred PO is always confirmed by a human, however confident the match.
+- Bank details are only ever changed through the vendor master, never from an invoice.
+- Single currency (USD); single buyer entity.
 
-## Deploy on Vercel
+## Stack
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Next.js 15 (App Router, TypeScript, Tailwind) · Gemini (`@google/genai`, structured JSON output) ·
+Supabase (Postgres + Storage) · deployed on Vercel. The live run view polls the run's stage rows every second.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Run locally
+
+1. `npm install`
+2. Copy `.env.example` → `.env.local` and fill in the Gemini key and Supabase URL + **secret** key.
+3. In Supabase SQL Editor, run [`supabase/schema.sql`](supabase/schema.sql).
+4. `npm run dev`, open http://localhost:3000, go to **Vendors & POs → Reset demo data**.
+5. **Process invoice** → pick a demo invoice.
+
+Tests: `bash scripts/run-samples.sh` (end-to-end against the running app).
+Regenerate sample PDFs: `python scripts/make_invoices.py`.
+
+## What I'd build next
+
+Email inbox ingestion · multi-currency · per-vendor tolerance · line-level 3-way match against goods receipts ·
+vendor follow-up emails drafted automatically · reviewer roles and audit export.
