@@ -82,6 +82,15 @@ create table run_steps (
 );
 create index run_steps_run_idx on run_steps (run_id, seq);
 
+-- Editable rule configuration (tolerances, what each rule does). One row, id = 'rules'.
+drop table if exists settings cascade;
+create table settings (
+  id          text primary key,
+  value       jsonb not null,
+  updated_at  timestamptz not null default now()
+);
+alter table settings enable row level security;
+
 -- The app only talks to the database from the server using the service-role key,
 -- so we enable RLS with no policies: the public anon key can read nothing.
 alter table vendors          enable row level security;

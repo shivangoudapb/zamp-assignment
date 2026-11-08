@@ -1,6 +1,8 @@
 ﻿import { NextResponse } from "next/server";
 import { BUCKET, db } from "@/lib/supabase";
 import { PURCHASE_ORDERS, VENDORS, seedRunRows } from "@/lib/seed";
+import { DEFAULT_CONFIG } from "@/lib/config";
+import { saveConfig } from "@/lib/settings";
 
 export const runtime = "nodejs";
 
@@ -28,5 +30,7 @@ export async function POST() {
     const { error } = await step();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  // Rules back to defaults so demo outcomes are predictable (ignored if settings table not created yet)
+  await saveConfig(DEFAULT_CONFIG).catch(() => null);
   return NextResponse.json({ ok: true, vendors: VENDORS.length, purchase_orders: PURCHASE_ORDERS.length });
 }

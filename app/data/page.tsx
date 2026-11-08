@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { LoaderCircle, RotateCcw } from "lucide-react";
+import Link from "next/link";
 import { Card, usd } from "@/components/ui";
-import { CONFIG } from "@/lib/rules";
+import type { RuleConfig } from "@/lib/config";
 
 type Vendor = { id: string; name: string; aliases: string[]; tax_id: string; email: string; bank_last4: string; status: string };
 type PO = { po_number: string; vendor_id: string; description: string; amount: number; billed: number; billed_invoices: string[]; remaining: number; status: string };
@@ -12,9 +13,12 @@ export default function DataPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  const [cfg, setCfg] = useState<RuleConfig | null>(null);
+
   const load = useCallback(async () => {
-    const res = await fetch("/api/reference", { cache: "no-store" });
-    setData(await res.json());
+    const [ref, set] = await Promise.all([fetch("/api/reference", { cache: "no-store" }), fetch("/api/settings", { cache: "no-store" })]);
+    setData(await ref.json());
+    setCfg((await set.json()).config);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -43,17 +47,22 @@ export default function DataPage() {
       </div>
       {msg && <div className="rounded-lg border border-line bg-white px-4 py-3 text-sm">{msg}</div>}
 
-      <Card className="p-4 text-sm">
-        <div className="font-semibold">Rules in force</div>
-        <ul className="mt-2 grid gap-x-6 gap-y-1 text-muted sm:grid-cols-2">
-          <li>Over-billing tolerance: <b className="text-ink">{CONFIG.tolerancePct * 100}% of PO value</b></li>
-          <li>Minimum AI read confidence: <b className="text-ink">{CONFIG.minFieldConfidence * 100}%</b></li>
-          <li>Vendor name match threshold: <b className="text-ink">{CONFIG.vendorMatchThreshold * 100}%</b></li>
-          <li>Near-duplicate window: <b className="text-ink">{CONFIG.nearDuplicateDays} days</b></li>
-          <li>Invoices with no PO: <b className="text-ink">PO suggested, human confirms</b></li>
-          <li>Bank details on invoice ≠ vendor master: <b className="text-ink">hold, verify by phone</b></li>
-        </ul>
-      </Card>
+      {cfg && (
+        <Card className="p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">Rules in force</div>
+            <Link href="/rules" className="text-sm text-brand hover:underline">Edit rules →</Link>
+          </div>
+          <ul className="mt-2 grid gap-x-6 gap-y-1 text-muted sm:grid-cols-2">
+            <li>Over-billing tolerance: <b className="text-ink">{cfg.tolerancePct}% of PO value</b></li>
+            <li>Minimum AI read confidence: <b className="text-ink">{Math.round(cfg.minFieldConfidence * 100)}%</b></li>
+            <li>Vendor name match threshold: <b className="text-ink">{Math.round(cfg.vendorMatchThreshold * 100)}%</b></li>
+            <li>Near-duplicate window: <b className="text-ink">{cfg.nearDuplicateDays} days</b></li>
+            <li>Invoices with no PO: <b className="text-ink">{cfg.inferredPoAutoAcceptPct != null ? `auto-accept at ≥ ${cfg.inferredPoAutoAcceptPct}%` : "PO suggested, human confirms"}</b></li>
+            <li>Approval limit: <b className="text-ink">{cfg.approvalLimit != null ? usd(cfg.approvalLimit) : "none"}</b></li>
+          </ul>
+        </Card>
+      )}
 
       {!data ? <div className="flex justify-center py-16"><LoaderCircle className="animate-spin text-muted" /></div> : (
         <>

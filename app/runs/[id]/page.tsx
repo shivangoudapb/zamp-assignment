@@ -306,7 +306,17 @@ function StageDetail({ stage, detail }: { stage: string; detail: Record<string, 
       )}
       {stage === "checks" && detail.po && <PoBar po={detail.po} />}
       {stage === "decide" && detail.counts && (
-        <KV rows={[["Blocking (reject)", detail.counts.reject], ["Needs review (hold)", detail.counts.hold], ["Checks passed", detail.counts.pass]]} />
+        <KV rows={[["Blocking (reject)", detail.counts.reject], ["Needs review (hold)", detail.counts.hold], ["Flagged only", detail.counts.flag ?? 0], ["Checks passed", detail.counts.pass]]} />
+      )}
+      {stage === "decide" && detail.rules && (
+        <div className="rounded-md border border-line bg-white px-2.5 py-2">
+          <div className="mb-1 font-medium">Rules applied (snapshot)</div>
+          <div className="text-muted">
+            Tolerance {detail.rules.tolerancePct}% · min confidence {Math.round(detail.rules.minFieldConfidence * 100)}% · vendor match {Math.round(detail.rules.vendorMatchThreshold * 100)}% ·
+            duplicate window {detail.rules.nearDuplicateDays}d · approval limit {detail.rules.approvalLimit != null ? usd(detail.rules.approvalLimit) : "none"} ·
+            inferred PO {detail.rules.inferredPoAutoAcceptPct != null ? `auto ≥ ${detail.rules.inferredPoAutoAcceptPct}%` : "human confirms"}
+          </div>
+        </div>
       )}
       {findings.length > 0 && <div className="space-y-1 pt-1">{findings.map((f, i) => <FindingRow key={i} f={f} />)}</div>}
     </div>

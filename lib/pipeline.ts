@@ -3,6 +3,7 @@ import { BUCKET, db } from "./supabase";
 import { extractInvoice } from "./gemini";
 import { checkAmountsAndDuplicates, checkVendor, decide, matchPo, validate, type HistoryRun, type StageResult } from "./rules";
 import { normId } from "./match";
+import { loadConfig } from "./settings";
 import { STAGES, type Extraction, type Finding, type PurchaseOrder, type StageKey, type StepStatus, type Vendor } from "./types";
 
 // Stages that finish in milliseconds are held on screen briefly so a viewer can follow along.
@@ -64,10 +65,11 @@ export async function runPipeline(runId: string, file: Buffer, mimeType: string,
 
     // Reference data loaded once
     current = "extract";
-    const [{ data: vendors }, { data: pos }, { data: history }] = await Promise.all([
+    const [{ data: vendors }, { data: pos }, { data: history }, { config: cfg }] = await Promise.all([
       db().from("vendors").select("*"),
       db().from("purchase_orders").select("*"),
       db().from("runs").select("id,run_no,vendor_id,invoice_number,invoice_number_norm,invoice_date,po_number,total,decision,review_decision,file_hash,created_at").eq("status", "done"),
+      loadConfig(),
     ]);
     const V = (vendors ?? []) as Vendor[];
     const P = ((pos ?? []) as PurchaseOrder[]).map((p) => ({ ...p, amount: Number(p.amount) }));
@@ -94,7 +96,7 @@ export async function runPipeline(runId: string, file: Buffer, mimeType: string,
 
     // 3. VALIDATE
     current = "validate";
-    const val = await stage(runId, "validate", findings, () => validate(ex));
+    const val = await stage(runId, "validate", findings, () => validate(ex, cfg));
     const notInvoice = val.findings.some((x) => x.code === "NOT_AN_INVOICE");
 
     // 4. VENDOR
@@ -102,7 +104,7 @@ export async function runPipeline(runId: string, file: Buffer, mimeType: string,
     let vendor: Vendor | null = null;
     if (notInvoice) await setStep(runId, "vendor", { status: "skipped", summary: "Skipped — not an invoice" });
     else {
-      const vr = await stage(runId, "vendor", findings, () => checkVendor(ex, V));
+      const vr = await stage(runId, "vendor", findings, () => checkVendor(ex, V, cfg));
       vendor = vr.vendor;
     }
 
@@ -112,7 +114,7 @@ export async function runPipeline(runId: string, file: Buffer, mimeType: string,
     let method: "explicit" | "inferred" | "none" = "none";
     if (notInvoice) await setStep(runId, "po_match", { status: "skipped", summary: "Skipped — not an invoice" });
     else {
-      const pr = await stage(runId, "po_match", findings, () => matchPo(ex, vendor, P, Hs, runId));
+      const pr = await stage(runId, "po_match", findings, () => matchPo(ex, vendor, P, Hs, runId, cfg));
       po = pr.po;
       method = pr.method;
     }
@@ -120,7 +122,7 @@ export async function runPipeline(runId: string, file: Buffer, mimeType: string,
     // 6. AMOUNT & DUPLICATES
     current = "checks";
     if (notInvoice) await setStep(runId, "checks", { status: "skipped", summary: "Skipped — not an invoice" });
-    else await stage(runId, "checks", findings, () => checkAmountsAndDuplicates(ex, vendor, po, Hs, runId, fileHash));
+    else await stage(runId, "checks", findings, () => checkAmountsAndDuplicates(ex, vendor, po, Hs, runId, fileHash, cfg));
 
     // 7. DECIDE
     current = "decide";
@@ -128,7 +130,8 @@ export async function runPipeline(runId: string, file: Buffer, mimeType: string,
     await stage(runId, "decide", [], () => ({
       status: d.status,
       summary: d.decision === "APPROVE" ? "Approved" : d.decision === "HOLD" ? `On hold · ${d.counts.hold} issue(s)` : "Rejected",
-      detail: { decision: d.decision, counts: d.counts, next_action: d.next_action },
+      // Snapshot of the rules this decision was made under — audit trail if rules change later.
+      detail: { decision: d.decision, counts: d.counts, next_action: d.next_action, rules: cfg },
       findings: [],
     }));
 

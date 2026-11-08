@@ -1,11 +1,12 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Database, LayoutDashboard, Plus, Receipt } from "lucide-react";
+import { Database, LayoutDashboard, Plus, Receipt, SlidersHorizontal } from "lucide-react";
 
 const LINKS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/data", label: "Vendors & POs", icon: Database },
+  { href: "/rules", label: "Rules", icon: SlidersHorizontal },
 ];
 
 export function Nav() {

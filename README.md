@@ -38,6 +38,15 @@ If anything fails (AI outage, unreadable file), the invoice is routed to manual 
 
 Held invoices can be approved or rejected by a reviewer in the UI; approvals then count against the PO balance.
 
+## Configurable rules (`/rules`)
+
+Every threshold and rule outcome is editable without code:
+
+- **Thresholds:** over-billing tolerance %, minimum AI read confidence, vendor-name match %, near-duplicate window, max invoice age.
+- **Optional controls:** an approval limit (invoices above $X always need sign-off) and auto-accepting inferred POs above a confidence %.
+- **Outcome per rule:** Reject / Hold / Flag only. Fraud, duplicate and vendor-trust rules cannot be set to flag-only (enforced server-side).
+- Each run stores a **snapshot of the rules it was decided under**, so changing policy never rewrites past decisions.
+
 ## Assumptions
 
 - PO amounts are total committed value incl. tax; tolerance is 2% of PO value.
@@ -55,11 +64,12 @@ Supabase (Postgres + Storage) · deployed on Vercel. The live run view polls the
 
 1. `npm install`
 2. Copy `.env.example` → `.env.local` and fill in the Gemini key and Supabase URL + **secret** key.
-3. In Supabase SQL Editor, run [`supabase/schema.sql`](supabase/schema.sql).
+3. In Supabase SQL Editor, run [`supabase/schema.sql`](supabase/schema.sql) (existing installs: also run `supabase/migrations/002_settings.sql`).
 4. `npm run dev`, open http://localhost:3000, go to **Vendors & POs → Reset demo data**.
 5. **Process invoice** → pick a demo invoice.
 
-Tests: `bash scripts/run-samples.sh` (end-to-end against the running app).
+Tests: `npx tsx scripts/test-rules.ts` (14 offline rule scenarios, incl. rule-config variants) and
+`bash scripts/run-samples.sh` (end-to-end against the running app).
 Regenerate sample PDFs: `python scripts/make_invoices.py`.
 
 ## What I'd build next

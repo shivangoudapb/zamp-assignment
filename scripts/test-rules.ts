@@ -5,6 +5,7 @@
 import { PURCHASE_ORDERS, VENDORS, seedRunRows } from "../lib/seed";
 import { checkAmountsAndDuplicates, checkVendor, decide, matchPo, validate, type HistoryRun } from "../lib/rules";
 import type { Extraction, Finding, PurchaseOrder, Vendor } from "../lib/types";
+import { DEFAULT_CONFIG, sanitizeConfig, type Outcome, type RuleConfig } from "../lib/config";
 
 const base: Extraction = {
   is_invoice: true, document_type: "invoice", vendor_name: null, vendor_tax_id: null, vendor_email: null,
@@ -70,17 +71,32 @@ const history: HistoryRun[] = seedRunRows().map((r, i) => ({
   review_decision: null, file_hash: null, created_at: r.created_at,
 }));
 
+// Same invoices under modified rule settings — proves the Rules page actually changes outcomes.
+const byName = (n: string) => cases.find((c) => c.name === n)!.ex;
+const withOutcome = (code: string, o: Outcome): RuleConfig => ({ ...DEFAULT_CONFIG, outcomes: { ...DEFAULT_CONFIG.outcomes, [code]: o } });
+const variants: { name: string; expect: string; ex: Extraction; cfg: RuleConfig }[] = [
+  { name: "split-globex @ 25% tolerance", expect: "APPROVE", ex: byName("split-globex"), cfg: { ...DEFAULT_CONFIG, tolerancePct: 25 } },
+  { name: "split-globex, overrun = reject", expect: "REJECT", ex: byName("split-globex"), cfg: withOutcome("PO_OVERRUN", "reject") },
+  { name: "fraud-stark, bank mismatch = reject", expect: "REJECT", ex: byName("fraud-stark"), cfg: withOutcome("BANK_MISMATCH", "reject") },
+  { name: "happy-acme over $5,000 approval limit", expect: "HOLD", ex: byName("happy-acme"), cfg: { ...DEFAULT_CONFIG, approvalLimit: 5000 } },
+  { name: "scanned-northwind, auto-accept PO ≥ 90%", expect: "APPROVE", ex: byName("scanned-northwind"), cfg: { ...DEFAULT_CONFIG, inferredPoAutoAcceptPct: 90 } },
+  { name: "bad-math, totals mismatch = flag only", expect: "APPROVE", ex: byName("bad-math (extra)"), cfg: withOutcome("TOTAL_MISMATCH", "info") },
+  { name: "sanitize: unsafe flag-only on duplicate ignored", expect: "REJECT", ex: byName("duplicate-initech"), cfg: sanitizeConfig({ outcomes: { DUPLICATE_INVOICE: "info" } }) },
+];
+
 let failures = 0;
-for (const c of cases) {
+const all_cases = [...cases.map((c) => ({ ...c, cfg: DEFAULT_CONFIG })), ...variants];
+for (const c of all_cases) {
+  const cfg = c.cfg;
   const runId = `test-${c.name}`;
   const all: Finding[] = [];
-  const v = validate(c.ex, new Date("2026-11-08"));
+  const v = validate(c.ex, cfg, new Date("2026-11-08"));
   all.push(...v.findings);
-  const vr = checkVendor(c.ex, vendors);
+  const vr = checkVendor(c.ex, vendors, cfg);
   all.push(...vr.findings);
-  const pr = matchPo(c.ex, vr.vendor, pos, history, runId);
+  const pr = matchPo(c.ex, vr.vendor, pos, history, runId, cfg);
   all.push(...pr.findings);
-  const ck = checkAmountsAndDuplicates(c.ex, vr.vendor, pr.po, history, runId, `hash-${c.name}`);
+  const ck = checkAmountsAndDuplicates(c.ex, vr.vendor, pr.po, history, runId, `hash-${c.name}`, cfg);
   all.push(...ck.findings);
   const d = decide(all, { vendorName: vr.vendor?.name ?? c.ex.vendor_name, invoiceNumber: c.ex.invoice_number, total: c.ex.total, po: pr.po?.po_number });
 
@@ -91,5 +107,5 @@ for (const c of cases) {
   for (const x of all.filter((x) => x.severity !== "pass")) console.log(`   [${x.severity}] ${x.code}: ${x.message}`);
   console.log(`  next: ${d.next_action}`);
 }
-console.log(`\n${cases.length - failures}/${cases.length} scenarios behave as expected`);
+console.log(`\n${all_cases.length - failures}/${all_cases.length} scenarios behave as expected`);
 process.exit(failures ? 1 : 0);

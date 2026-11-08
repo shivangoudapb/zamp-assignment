@@ -25,7 +25,8 @@ const CODE_LABEL: Record<string, string> = {
   BANK_MISMATCH: "Bank details mismatch", BANK_CHANGE_NOTICE: "Bank change request", VENDOR_UNKNOWN: "Unknown vendor", VENDOR_BLOCKED: "Blocked vendor",
   TOTAL_MISMATCH: "Totals don't reconcile", LINES_MISMATCH: "Line items don't add up", LOW_CONFIDENCE: "Low read confidence", MISSING_FIELD: "Missing field",
   POSSIBLE_DUPLICATE: "Possible duplicate", PO_NOT_FOUND: "PO not found", NO_PO: "No PO", DATE_BEFORE_PO: "Dated before PO", PIPELINE_ERROR: "Processing error",
-  NOT_AN_INVOICE: "Not an invoice",
+  NOT_AN_INVOICE: "Not an invoice", OVER_APPROVAL_LIMIT: "Above approval limit", CURRENCY_MISMATCH: "Currency mismatch",
+  TAX_ID_MISMATCH: "Tax ID mismatch", PO_CLOSED: "PO closed", PO_VENDOR_MISMATCH: "PO of another vendor", FUTURE_DATE: "Future-dated", STALE_INVOICE: "Stale invoice",
 };
 
 export default function Dashboard() {
